@@ -80,6 +80,31 @@ public class RefreshTokenDao {
         List<RefreshToken> list = jdbcTemplate.query(sql, ROW_MAPPER, token, Timestamp.from(now));
         return list.stream().findFirst();
     }
+    /** consume: 原子地“消费”一个 refresh token（检查未 revoked + 未过期，同时撤销它）
+     *  成功返回 userId；失败返回 empty（表示无效/已用/过期）
+     */
+    public Optional<Integer> consumeValidToken(String token, Instant now) {
+        String sql = """
+        UPDATE refresh_tokens
+        SET revoked = TRUE
+        WHERE token = ?
+          AND revoked = FALSE
+          AND expires_at > ?
+        """;
+
+        int updated = jdbcTemplate.update(sql, token, Timestamp.from(now));
+        if (updated == 0) {
+            return Optional.empty();
+        }
+
+        // 这里安全：只有 update 成功的那一个线程会走到这里
+        Integer userId = jdbcTemplate.queryForObject(
+                "SELECT user_id FROM refresh_tokens WHERE token = ?",
+                Integer.class,
+                token
+        );
+        return Optional.ofNullable(userId);
+    }
 
     /** revoke: 让这个 refresh token 失效（logout 用） */
     public boolean revokeByToken(String token) {

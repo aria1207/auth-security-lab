@@ -13,6 +13,11 @@ Option B (more realistic):
 - `GET /users` admin-only
 - `GET/PUT /users/{id}` allowed for self or admin
 
+## Implemented: Fix for F-01 (refresh rotation race)
+- Added atomic refresh token consumption:
+  - `UPDATE ... SET revoked=TRUE WHERE token=? AND revoked=FALSE AND expires_at > now`
+- Prevents concurrent refresh requests from minting multiple refresh tokens (session forking).
+
 ## Implemented: Fix for F-02 (BOLA/IDOR)
 - Enforced object-level authorization in `UserController`:
   - `GET /users` admin-only

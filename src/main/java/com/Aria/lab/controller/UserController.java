@@ -49,6 +49,46 @@ public class UserController {
         this.refreshTokenDao = refreshTokenDao;
     }
 
+    private int requireAuthUserId(HttpServletRequest req) {
+        Object uid = req.getAttribute("userId");
+        if (uid == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing auth context");
+        }
+        if (uid instanceof Integer i) {
+            return i;
+        }
+        if (uid instanceof Number n) {
+            return n.intValue();
+        }
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid auth context");
+    }
+
+    private String requireAuthUsername(HttpServletRequest req) {
+        Object uname = req.getAttribute("username");
+        if (uname == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing auth context");
+        }
+        return uname.toString();
+    }
+
+    private void requireAdmin(HttpServletRequest req) {
+        String username = requireAuthUsername(req);
+        if (!"admin".equals(username)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "forbidden");
+        }
+    }
+
+    private void requireSelfOrAdmin(HttpServletRequest req, int targetUserId) {
+        String username = requireAuthUsername(req);
+        int currentUserId = requireAuthUserId(req);
+        if ("admin".equals(username)) {
+            return;
+        }
+        if (currentUserId != targetUserId) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "forbidden");
+        }
+    }
+
     @GetMapping("/hello")
     public String hello() {
         return "hello";
@@ -75,14 +115,16 @@ public class UserController {
     }
 
     @GetMapping("/users")
-    public List<UserDTO> users() {
+    public List<UserDTO> users(HttpServletRequest req) {
+        requireAdmin(req);
         return userDao.findAll()
                 .stream()
                 .map(u -> new UserDTO(u.getId(), u.getUsername()))
                 .toList();
     }
     @GetMapping("/users/{id}")
-    public UserDTO userById(@PathVariable int id) {
+    public UserDTO userById(@PathVariable int id, HttpServletRequest req) {
+        requireSelfOrAdmin(req, id);
         return userDao.findById(id)
                 .map(u -> new UserDTO(u.getId(), u.getUsername()))
                 .orElseThrow(() ->
@@ -94,7 +136,8 @@ public class UserController {
     }
     @DeleteMapping("/users/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteUser(@PathVariable int id) {
+    public void deleteUser(@PathVariable int id, HttpServletRequest req) {
+        requireSelfOrAdmin(req, id);
         boolean deleted = userDao.deleteById(id);
 
         if (!deleted) {
@@ -105,7 +148,9 @@ public class UserController {
         }
     }
     @PutMapping("/users/{id}")
-    public UserDTO updateUser(@PathVariable int id, @RequestBody UserCreateRequest req) {
+    public UserDTO updateUser(@PathVariable int id, @RequestBody UserCreateRequest req, HttpServletRequest httpReq) {
+
+        requireSelfOrAdmin(httpReq, id);
 
         // 1) 简单校验（先不用 Validation 也可以）
         if (req.getUsername() == null || req.getUsername().isBlank()) {
@@ -127,7 +172,9 @@ public class UserController {
     }
     @PostMapping("/users")
     @ResponseStatus(HttpStatus.CREATED)
-    public UserDTO createUser(@RequestBody UserCreateRequest req) {
+    public UserDTO createUser(@RequestBody UserCreateRequest req, HttpServletRequest httpReq) {
+
+        requireAdmin(httpReq);
 
         // 1) 参数校验
         if (req.getUsername() == null || req.getUsername().isBlank()) {
@@ -182,23 +229,22 @@ public class UserController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "refreshToken is required");
         }
 
-        // 1) 校验旧 refresh token（未 revoked + 未过期）
-        var tokenRow = refreshTokenDao.findValidByToken(req.refreshToken(), Instant.now())
+        // 1) 原子消费旧 refresh token（未 revoked + 未过期），成功才继续
+        Instant now = Instant.now();
+
+        int userId = refreshTokenDao.consumeValidToken(req.refreshToken(), now)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid refresh token"));
 
         // 2) 找到用户（用于签新的 access token）
-        User u = userDao.findById(tokenRow.getUserId())
+        User u = userDao.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "user not found"));
 
-        // 3) rotate：先撤销旧 refresh token（防止重复使用）
-        refreshTokenDao.revokeByToken(req.refreshToken());
-
-        // 4) 生成并保存新的 refresh token（例如 7 天）
+        // 3) 生成并保存新的 refresh token（例如 7 天）
         String newRefreshToken = UUID.randomUUID().toString();
-        Instant newRefreshExpiresAt = Instant.now().plus(7, ChronoUnit.DAYS);
+        Instant newRefreshExpiresAt = now.plus(7, ChronoUnit.DAYS);
         refreshTokenDao.insert(u.getId(), newRefreshToken, newRefreshExpiresAt);
 
-        // 5) 生成新的 access token
+        // 4) 生成新的 access token
         String newAccessToken = jwtService.issueToken(u.getId(), u.getUsername());
 
         return new RefreshResponse(newAccessToken, newRefreshToken);

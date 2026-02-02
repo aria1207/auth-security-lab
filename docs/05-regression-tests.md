@@ -11,6 +11,10 @@ This section documents tests that prove fixes are effective.
 - User A requesting `PUT /users/{id_of_B}` returns 403
 - User A requesting their own resource returns 200
 
+## F-01 Regression (Race Condition)
+`RefreshRaceRegressionTest` issues 10 concurrent refresh requests using the same refresh token.
+Expected: exactly 1 success (200); others fail (401).
+
 ## F-02 Regression (BOLA/IDOR)
 Implemented `AuthorizationRegressionTest`:
 

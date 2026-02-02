@@ -66,6 +66,9 @@ public class JwtService {
 
         return new JwtClaims(userId, username, exp);
     }
+    public String getUsername(String token) {
+        return verify(token).username();
+    }
 
     private String hmacSha256(String signingInput) {
         try {
