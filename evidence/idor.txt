@@ -1,0 +1,3 @@
+GET /users  -> 200 OK (returns user list)
+GET /users/2 -> 200 OK (returns other user's record)
+PUT /users/2 -> 200 OK (modifies other user)
