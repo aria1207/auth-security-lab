@@ -10,3 +10,11 @@ This section documents tests that prove fixes are effective.
 - User A requesting `GET /users/{id_of_B}` returns 403
 - User A requesting `PUT /users/{id_of_B}` returns 403
 - User A requesting their own resource returns 200
+
+## F-02 Regression (BOLA/IDOR)
+Implemented `AuthorizationRegressionTest`:
+
+- `henry` GET `/users` -> 403
+- `henry` GET `/users/1` -> 403
+- `henry` PUT `/users/1` -> 403
+- `henry` GET `/users/2` -> 200

@@ -13,4 +13,10 @@ Option B (more realistic):
 - `GET /users` admin-only
 - `GET/PUT /users/{id}` allowed for self or admin
 
+## Implemented: Fix for F-02 (BOLA/IDOR)
+- Enforced object-level authorization in `UserController`:
+  - `GET /users` admin-only
+  - `GET/PUT/DELETE /users/{id}` allowed for self or admin
+  - `POST /users` admin-only (to avoid account abuse)
+
 This repo will implement one of the above options and include regression tests.
